@@ -246,6 +246,18 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         {/* ── Main ── */}
         <main className="min-h-screen bg-background px-4 py-8 sm:px-8">{children}</main>
       </div>
+
+      {/* ── Buy Me a Coffee ── */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <a href="https://www.buymeacoffee.com/bollu" target="_blank" rel="noopener noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+            alt="Buy Me A Coffee"
+            style={{ height: "45px", width: "auto" }}
+          />
+        </a>
+      </div>
     </div>
   );
 }
