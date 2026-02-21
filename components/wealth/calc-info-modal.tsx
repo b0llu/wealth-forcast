@@ -16,8 +16,8 @@ export function CalcInfoModal({ onClose }: { onClose: () => void }) {
           <div>
             <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#ffae04]">Step 1 — AI Research</p>
             <p className="text-muted-foreground leading-relaxed">
-              For each investment, Gemini searches the web for historical returns (YTD, 1Y, 3Y CAGR, 5Y CAGR, since inception).
-              It estimates three forward-looking annual return rates. The expected rate blends the model estimate (55%) with historical signals (45%).
+              For each investment, AI searches the web for historical returns (YTD, 1Y, 3Y CAGR, 5Y CAGR, since inception).
+              It estimates three forward-looking annual return rates. The expected rate blends the AI estimate (55%) with historical signals (45%).
             </p>
           </div>
           <div>

@@ -175,7 +175,7 @@ export default function LoginPage() {
             <ul className="grid gap-2 text-xs text-muted-foreground">
               {[
                 "Multi-scenario AI forecasts (conservative → aggressive)",
-                "Live market research via Gemini + Google Search",
+                "Live market research powered by AI",
                 "Your data is private — only you can access it",
               ].map((feat) => (
                 <li key={feat} className="flex items-start gap-2">
