@@ -36,7 +36,7 @@ const PlannerContext = createContext<PlannerState | null>(null);
 
 function normalizePortfolio(data?: Partial<PortfolioData>): PortfolioData {
   return {
-    currency:    (data?.currency || "INR").toUpperCase().slice(0, 3),
+    currency:    (data?.currency || "INR").toUpperCase(),
     years:       Math.min(Math.max(Number(data?.years || 15), 1), 50),
     investments: Array.isArray(data?.investments) ? data.investments : [],
   };
@@ -182,7 +182,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   );
 
   /* ── Setters ─────────────────────────────────────────────────── */
-  const setCurrency = (v: string) => setCurrencyState(v.toUpperCase().slice(0, 3));
+  const setCurrency = (v: string) => setCurrencyState(v.toUpperCase());
   const setYears    = (v: number) =>
     setYearsState(Number.isFinite(v) ? Math.min(Math.max(v, 1), 50) : 15);
 

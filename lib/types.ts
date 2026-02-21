@@ -20,6 +20,9 @@ export type InvestmentInput = {
   institution?: string;
   ticker?: string;
   notes?: string;
+  // Stock-specific: shares held and average purchase price
+  shares?: number;
+  avgPrice?: number;
 };
 
 export type ForecastRequest = {

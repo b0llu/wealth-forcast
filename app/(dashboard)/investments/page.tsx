@@ -1,6 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import getSymbol from "currency-symbol-map";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const currencySymbolMap = require("currency-symbol-map/map") as Record<string, string>;
 import type { ContributionFrequency, InvestmentInput, InvestmentType } from "../../../lib/types";
 import { usePlannerStore } from "../../../components/planner-store";
 
@@ -32,7 +36,6 @@ const TYPE_THEMES: Record<InvestmentType, TypeTheme> = {
     bg: "rgba(219,39,119,0.08)",
     label: "Mutual Funds",
     icon: (
-      // Rising bar chart — NAV growth feel
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <rect x="1.5" y="8" width="2.5" height="4.5" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
         <rect x="5.5" y="5"   width="2.5" height="7.5" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
@@ -56,7 +59,6 @@ const TYPE_THEMES: Record<InvestmentType, TypeTheme> = {
     bg: "rgba(22,163,74,0.08)",
     label: "PPF",
     icon: (
-      // Shield with checkmark — government-backed safety
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <path d="M7 1.5L12 4v4.5C12 11 9.8 12.7 7 13c-2.8-.3-5-2-5-4.5V4L7 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
         <path d="M4.5 7l1.8 1.8L9.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -68,7 +70,6 @@ const TYPE_THEMES: Record<InvestmentType, TypeTheme> = {
     bg: "rgba(168,85,247,0.08)",
     label: "NPS",
     icon: (
-      // Concentric rings — long-horizon pension
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.4" />
         <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.2" strokeOpacity="0.5" />
@@ -81,7 +82,6 @@ const TYPE_THEMES: Record<InvestmentType, TypeTheme> = {
     bg: "rgba(8,145,178,0.08)",
     label: "Fixed Deposits",
     icon: (
-      // Lock — locked-in tenure
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <rect x="2.5" y="6" width="9" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
         <path d="M4.5 6V4.5a2.5 2.5 0 015 0V6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
@@ -94,7 +94,6 @@ const TYPE_THEMES: Record<InvestmentType, TypeTheme> = {
     bg: "rgba(249,115,22,0.08)",
     label: "Crypto",
     icon: (
-      // Lightning bolt — volatility, speed
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <path d="M8.5 1.5L4 7.5h4.5L5.5 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -116,7 +115,7 @@ const TYPE_THEMES: Record<InvestmentType, TypeTheme> = {
 
 /* ─── Types ──────────────────────────────────────────────────── */
 
-type StockEntry = { id: string; name: string; amount: number };
+type StockEntry = { id: string; name: string; shares: number; avgPrice: number };
 
 /* ─── Helpers ────────────────────────────────────────────────── */
 
@@ -136,7 +135,7 @@ function createDraft(): InvestmentInput {
 }
 
 function createStockEntry(): StockEntry {
-  return { id: crypto.randomUUID(), name: "", amount: 0 };
+  return { id: crypto.randomUUID(), name: "", shares: 0, avgPrice: 0 };
 }
 
 function frequencyHint(frequency: ContributionFrequency) {
@@ -147,20 +146,120 @@ function frequencyHint(frequency: ContributionFrequency) {
 
 function formatCompact(value: number, currency: string): string {
   if (!value) return "—";
+  const sym = getSymbol(currency) ?? `${currency} `;
   if (currency === "INR") {
-    if (value >= 1e7) return `₹${(value / 1e7).toFixed(1)}Cr`;
-    if (value >= 1e5) return `₹${(value / 1e5).toFixed(1)}L`;
-    if (value >= 1e3) return `₹${(value / 1e3).toFixed(0)}K`;
-    return `₹${value}`;
+    if (value >= 1e7) return `${sym}${(value / 1e7).toFixed(1)}Cr`;
+    if (value >= 1e5) return `${sym}${(value / 1e5).toFixed(1)}L`;
+    if (value >= 1e3) return `${sym}${(value / 1e3).toFixed(0)}K`;
+    return `${sym}${value}`;
   }
-  const sym =
-    currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "GBP" ? "£" : `${currency} `;
   if (value >= 1e6) return `${sym}${(value / 1e6).toFixed(1)}M`;
   if (value >= 1e3) return `${sym}${(value / 1e3).toFixed(0)}K`;
   return `${sym}${value}`;
 }
 
-/* ─── Type badge (used only in the modal) ────────────────────── */
+const CURRENCY_OPTIONS = Object.entries(currencySymbolMap).map(([code, symbol]) => ({
+  code,
+  symbol,
+}));
+
+function CurrencySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return CURRENCY_OPTIONS.filter(({ code, symbol }) =>
+      code.toLowerCase().includes(q) || symbol.toLowerCase().includes(q)
+    ).slice(0, 60);
+  }, [search]);
+
+  function toggle() {
+    if (open) { setOpen(false); return; }
+    setRect(buttonRef.current?.getBoundingClientRect() ?? null);
+    setSearch("");
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (!buttonRef.current?.contains(t) && !dropdownRef.current?.contains(t)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const selectedSymbol = getSymbol(value);
+
+  const dropdown = rect && open && createPortal(
+    <div
+      ref={dropdownRef}
+      style={{
+        position: "absolute",
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+        zIndex: 9999,
+      }}
+      className="rounded-xl border border-border bg-card shadow-xl"
+    >
+      <div className="border-b border-border px-3 py-2">
+        <input
+          autoFocus
+          className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          placeholder="Search currency…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      <div className="max-h-48 overflow-y-auto">
+        {filtered.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-muted-foreground">No results</p>
+        ) : (
+          filtered.map(({ code, symbol }) => (
+            <button
+              key={code}
+              type="button"
+              className={
+                "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50" +
+                (code === value ? " bg-muted/30 font-medium" : "")
+              }
+              onClick={() => { onChange(code); setOpen(false); setSearch(""); }}
+            >
+              <span className="w-10 shrink-0 font-mono font-semibold text-foreground">{code}</span>
+              <span className="text-muted-foreground">{symbol}</span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={inputClass + " flex items-center justify-between gap-2 cursor-pointer text-left"}
+        onClick={toggle}
+      >
+        <span>{value}{selectedSymbol ? ` – ${selectedSymbol}` : ""}</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="shrink-0 opacity-50">
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {dropdown}
+    </>
+  );
+}
+
+/* ─── Type badge ─────────────────────────────────────────────── */
 
 function TypeBadge({ type }: { type: InvestmentType }) {
   const theme = TYPE_THEMES[type];
@@ -205,7 +304,7 @@ const inputClass =
 const selectClass =
   "w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring appearance-none";
 
-/* ─── Investment row (compact, lives inside a group) ─────────── */
+/* ─── Investment row (non-stock types) ───────────────────────── */
 
 function InvestmentRow({
   investment,
@@ -220,7 +319,6 @@ function InvestmentRow({
 }) {
   const theme = TYPE_THEMES[investment.type];
 
-  // Only show contribution when there's actually a recurring amount
   const contribLabel = useMemo(() => {
     if (investment.contributionFrequency === "one_time" || !investment.contributionAmount) return null;
     const suffix = investment.contributionFrequency === "monthly" ? "/mo" : "/yr";
@@ -229,13 +327,11 @@ function InvestmentRow({
 
   return (
     <div className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-muted/30">
-      {/* Type-colored left dot */}
       <div
         className="h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ backgroundColor: theme.color }}
       />
 
-      {/* Name + institution */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">
           {investment.name || "Untitled"}
@@ -247,9 +343,7 @@ function InvestmentRow({
         )}
       </div>
 
-      {/* Stats — right-aligned */}
       <div className="flex shrink-0 items-center gap-6">
-        {/* Invested */}
         <div className="text-right">
           <p className="font-numeric text-sm font-semibold text-foreground">
             {formatCompact(investment.initialAmount, currency)}
@@ -257,7 +351,6 @@ function InvestmentRow({
           <p className="text-[10px] text-muted-foreground/50">invested</p>
         </div>
 
-        {/* Contribution — fixed-width slot so rows stay aligned */}
         <div className="w-24 text-right">
           {contribLabel ? (
             <>
@@ -277,7 +370,6 @@ function InvestmentRow({
         </div>
       </div>
 
-      {/* Actions — fade in on row hover */}
       <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <button
           type="button"
@@ -300,7 +392,195 @@ function InvestmentRow({
   );
 }
 
-/* ─── Investment group (one per type) ────────────────────────── */
+/* ─── Stock row ──────────────────────────────────────────────── */
+
+function StockRow({
+  investment,
+  currency,
+  onEdit,
+  onRemove,
+}: {
+  investment: InvestmentInput;
+  currency: string;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const shares = investment.shares ?? 0;
+  const avgPrice = investment.avgPrice ?? 0;
+  const totalValue = shares > 0 && avgPrice > 0 ? shares * avgPrice : investment.initialAmount;
+
+  return (
+    <div className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-[rgba(38,113,244,0.04)]">
+      {/* Name + ticker + ref link */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium text-foreground">
+            {investment.name || "Untitled"}
+          </p>
+          {investment.ticker && (
+            <span className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#2671f4] bg-[rgba(38,113,244,0.1)]">
+              {investment.ticker.toUpperCase()}
+            </span>
+          )}
+        </div>
+        {investment.institution && (
+          <p className="truncate text-[11px] text-muted-foreground/50">
+            {investment.institution}
+          </p>
+        )}
+      </div>
+
+      {/* Shares */}
+      <div className="w-20 shrink-0 text-right">
+        {shares > 0 ? (
+          <>
+            <p className="tabular-nums text-sm font-semibold text-foreground">
+              {shares.toLocaleString()}
+            </p>
+            <p className="text-[10px] text-muted-foreground/40">shares</p>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground/25">—</p>
+        )}
+      </div>
+
+      {/* Avg price */}
+      <div className="w-24 shrink-0 text-right">
+        {avgPrice > 0 ? (
+          <>
+            <p className="tabular-nums text-sm font-semibold text-foreground">
+              {formatCompact(avgPrice, currency)}
+            </p>
+            <p className="text-[10px] text-muted-foreground/40">avg price</p>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground/25">—</p>
+        )}
+      </div>
+
+      {/* Total value */}
+      <div className="w-28 shrink-0 text-right">
+        <p className="tabular-nums text-sm font-semibold text-foreground">
+          {formatCompact(totalValue, currency)}
+        </p>
+        <p className="text-[10px] text-muted-foreground/40">value</p>
+      </div>
+
+      {/* Actions */}
+      <div className="flex w-[72px] shrink-0 justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="rounded-lg border border-destructive/20 px-2 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Stock group ────────────────────────────────────────────── */
+
+function StockGroup({
+  items,
+  currency,
+  onEdit,
+  onRemove,
+}: {
+  items: InvestmentInput[];
+  currency: string;
+  onEdit: (inv: InvestmentInput) => void;
+  onRemove: (id: string) => void;
+}) {
+  const theme = TYPE_THEMES["stock"];
+
+  const totalValue = useMemo(
+    () =>
+      items.reduce((sum, inv) => {
+        const s = inv.shares ?? 0;
+        const p = inv.avgPrice ?? 0;
+        return sum + (s > 0 && p > 0 ? s * p : inv.initialAmount);
+      }, 0),
+    [items]
+  );
+
+  return (
+    <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-[#2671f4]/20 bg-card">
+      {/* Group header */}
+      <div
+        className="flex items-center justify-between px-5 py-3.5"
+        style={{ backgroundColor: "rgba(38,113,244,0.06)", borderBottom: "1px solid rgba(38,113,244,0.1)" }}
+      >
+        <div className="flex items-center gap-2.5">
+          <div
+            className="flex h-7 w-7 items-center justify-center rounded-lg"
+            style={{ backgroundColor: "rgba(38,113,244,0.15)", color: "#2671f4" }}
+          >
+            {theme.icon}
+          </div>
+          <span className="text-sm font-semibold text-foreground">{theme.label}</span>
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+            style={{ color: "#2671f4", backgroundColor: "rgba(38,113,244,0.12)" }}
+          >
+            {items.length}
+          </span>
+        </div>
+        <div className="text-right">
+          <p className="font-numeric text-sm font-semibold text-foreground">
+            {formatCompact(totalValue, currency)}
+          </p>
+          <p className="text-[10px] text-muted-foreground/60">total value</p>
+        </div>
+      </div>
+
+      {/* Column headers */}
+      <div
+        className="flex items-center gap-3 border-b px-5 py-2"
+        style={{ borderColor: "rgba(38,113,244,0.08)", backgroundColor: "rgba(38,113,244,0.02)" }}
+      >
+        <span className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+          Name
+        </span>
+        <span className="w-20 shrink-0 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+          Shares
+        </span>
+        <span className="w-24 shrink-0 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+          Avg Price
+        </span>
+        <span className="w-28 shrink-0 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+          Value
+        </span>
+        <span className="w-[72px] shrink-0" />
+      </div>
+
+      {/* Stock rows */}
+      <div className="divide-y divide-[rgba(38,113,244,0.06)]">
+        {items.map((inv) => (
+          <StockRow
+            key={inv.id}
+            investment={inv}
+            currency={currency}
+            onEdit={() => onEdit(inv)}
+            onRemove={() => onRemove(inv.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Investment group (non-stock types) ─────────────────────── */
 
 function InvestmentGroup({
   type,
@@ -334,13 +614,11 @@ function InvestmentGroup({
 
   return (
     <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-border bg-card">
-      {/* Group header */}
       <div
         className="flex items-center justify-between px-5 py-3.5"
         style={{ backgroundColor: theme.bg, borderBottom: `1px solid ${theme.color}18` }}
       >
         <div className="flex items-center gap-2.5">
-          {/* Icon chip */}
           <div
             className="flex h-7 w-7 items-center justify-center rounded-lg"
             style={{ backgroundColor: `${theme.color}18`, color: theme.color }}
@@ -348,7 +626,6 @@ function InvestmentGroup({
             {theme.icon}
           </div>
           <span className="text-sm font-semibold text-foreground">{theme.label}</span>
-          {/* Count pill */}
           <span
             className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
             style={{ color: theme.color, backgroundColor: `${theme.color}18` }}
@@ -357,7 +634,6 @@ function InvestmentGroup({
           </span>
         </div>
 
-        {/* Summary stats */}
         <div className="flex items-center gap-5 text-right">
           <div>
             <p className="font-numeric text-sm font-semibold text-foreground">
@@ -376,7 +652,6 @@ function InvestmentGroup({
         </div>
       </div>
 
-      {/* Rows */}
       <div className="divide-y divide-border/40">
         {items.map((inv) => (
           <InvestmentRow
@@ -413,10 +688,11 @@ export default function InvestmentsPage() {
   const [sessionAdded, setSessionAdded] = useState<InvestmentInput[]>([]);
   const [stockEntries, setStockEntries] = useState<StockEntry[]>([createStockEntry()]);
 
-  // True when adding (not editing) a stock investment — enables multi-entry builder
-  const isStockAddMode = draft.type === "stock" && !editingId;
+  // Multi-add: adding (not editing) a stock
+  const isStockAddMode  = draft.type === "stock" && !editingId;
+  // Edit: editing an existing stock
+  const isStockEditMode = draft.type === "stock" && editingId !== null;
 
-  // Investments grouped by type, ordered by the investmentTypes array
   const groupedInvestments = useMemo(() => {
     const map = new Map<InvestmentType, InvestmentInput[]>();
     investments.forEach((inv) => {
@@ -443,7 +719,15 @@ export default function InvestmentsPage() {
     return "Add Investment";
   }, [editingId, draft.type, stockEntries]);
 
-  /* ── Modal open/close ──────────────────────────────────────── */
+  // Live computed value for stock edit form
+  const stockComputedValue = useMemo(() => {
+    if (!isStockEditMode) return 0;
+    const s = draft.shares ?? 0;
+    const p = draft.avgPrice ?? 0;
+    return s * p;
+  }, [isStockEditMode, draft.shares, draft.avgPrice]);
+
+  /* ── Modal open/close ────────────────────────────────────────── */
 
   const openAddModal = () => {
     setEditingId(null);
@@ -469,18 +753,29 @@ export default function InvestmentsPage() {
     setStockEntries([createStockEntry()]);
   };
 
-  /* ── Save ──────────────────────────────────────────────────── */
+  /* ── Save ────────────────────────────────────────────────────── */
 
   const saveDraft = () => {
-    // Edit mode — save and close
+    // Edit mode
     if (editingId) {
       if (!draft.name.trim()) return;
-      updateInvestment(editingId, draft);
+      let patch = { ...draft };
+      if (patch.type === "stock") {
+        const shares   = patch.shares   ?? 0;
+        const avgPrice = patch.avgPrice ?? 0;
+        // Derive initialAmount from shares × avgPrice if both are set
+        if (shares > 0 && avgPrice > 0) {
+          patch = { ...patch, initialAmount: shares * avgPrice };
+        }
+        // Stocks don't have recurring contributions
+        patch = { ...patch, contributionFrequency: "one_time", contributionAmount: 0 };
+      }
+      updateInvestment(editingId, patch);
       closeModal();
       return;
     }
 
-    // Add mode: Stock (multi-entry) — each row → its own InvestmentInput
+    // Add mode: Stock (multi-entry builder)
     if (draft.type === "stock") {
       const valid = stockEntries.filter((e) => e.name.trim());
       if (valid.length === 0) return;
@@ -490,11 +785,12 @@ export default function InvestmentsPage() {
           id: crypto.randomUUID(),
           type: "stock",
           name: entry.name.trim(),
-          contributionFrequency: draft.contributionFrequency,
-          contributionAmount: draft.contributionAmount,
-          initialAmount: entry.amount,
+          contributionFrequency: "one_time",
+          contributionAmount: 0,
+          initialAmount: entry.shares * entry.avgPrice,
+          shares: entry.shares,
+          avgPrice: entry.avgPrice,
           institution: draft.institution,
-          sourceUrl: draft.sourceUrl,
           notes: draft.notes,
           ticker: "",
         };
@@ -502,29 +798,24 @@ export default function InvestmentsPage() {
         added.push(inv);
       });
       setSessionAdded((prev) => [...prev, ...added]);
-      // Reset stock rows; preserve shared fields for convenience
       setStockEntries([createStockEntry()]);
       setDraft((cur) => ({
         ...createDraft(),
         type: "stock",
-        contributionFrequency: cur.contributionFrequency,
-        contributionAmount: cur.contributionAmount,
         institution: cur.institution,
-        sourceUrl: cur.sourceUrl,
       }));
       return;
     }
 
-    // Add mode: all other investment types — stay open for bulk adding
+    // Add mode: all other types — stay open for bulk adding
     if (!draft.name.trim()) return;
     const inv = { ...draft, id: crypto.randomUUID() };
     addInvestment(inv);
     setSessionAdded((prev) => [...prev, inv]);
-    // Reset form but keep type so user can add more of the same kind
     setDraft((cur) => ({ ...createDraft(), type: cur.type }));
   };
 
-  /* ── Render ────────────────────────────────────────────────── */
+  /* ── Render ──────────────────────────────────────────────────── */
 
   return (
     <div className="mx-auto grid max-w-5xl gap-6">
@@ -563,14 +854,8 @@ export default function InvestmentsPage() {
           Portfolio Settings
         </h3>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Currency (3-letter code)">
-            <input
-              className={inputClass}
-              value={currency}
-              maxLength={3}
-              placeholder="INR"
-              onChange={(e) => setCurrency(e.target.value)}
-            />
+          <FormField label="Currency">
+            <CurrencySelect value={currency} onChange={setCurrency} />
           </FormField>
           <FormField label="Forecast Horizon (years)">
             <input
@@ -623,17 +908,28 @@ export default function InvestmentsPage() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {groupedInvestments.map((group, idx) => (
-              <div key={group.type} style={{ animationDelay: `${idx * 60}ms` }}>
-                <InvestmentGroup
-                  type={group.type}
-                  items={group.items}
-                  currency={currency}
-                  onEdit={openEditModal}
-                  onRemove={removeInvestment}
-                />
-              </div>
-            ))}
+            {groupedInvestments.map((group, idx) =>
+              group.type === "stock" ? (
+                <div key="stock" style={{ animationDelay: `${idx * 60}ms` }}>
+                  <StockGroup
+                    items={group.items}
+                    currency={currency}
+                    onEdit={openEditModal}
+                    onRemove={removeInvestment}
+                  />
+                </div>
+              ) : (
+                <div key={group.type} style={{ animationDelay: `${idx * 60}ms` }}>
+                  <InvestmentGroup
+                    type={group.type}
+                    items={group.items}
+                    currency={currency}
+                    onEdit={openEditModal}
+                    onRemove={removeInvestment}
+                  />
+                </div>
+              )
+            )}
           </div>
         )}
       </section>
@@ -671,7 +967,7 @@ export default function InvestmentsPage() {
             <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
               <div className="grid gap-4 sm:grid-cols-2">
 
-                {/* Investment Type — full-width in stock add mode */}
+                {/* Investment Type */}
                 <FormField label="Investment Type" colSpan={isStockAddMode}>
                   <div className="relative">
                     <select
@@ -701,95 +997,88 @@ export default function InvestmentsPage() {
                   </div>
                 </FormField>
 
-                {/* Name — hidden in stock add mode (names come from stock entries) */}
-                {!isStockAddMode && (
-                  <FormField label="Name *">
-                    <input
-                      className={inputClass}
-                      placeholder="e.g. HDFC Top 100"
-                      value={draft.name}
-                      onChange={(e) =>
-                        setDraft((cur) => ({ ...cur, name: e.target.value }))
-                      }
-                    />
-                  </FormField>
+                {/* ══ STOCK EDIT FORM ══ */}
+                {isStockEditMode && (
+                  <>
+                    <FormField label="Name *">
+                      <input
+                        className={inputClass}
+                        placeholder="e.g. Reliance Industries"
+                        value={draft.name}
+                        onChange={(e) => setDraft((cur) => ({ ...cur, name: e.target.value }))}
+                      />
+                    </FormField>
+
+                    <FormField label="Ticker Symbol">
+                      <input
+                        className={inputClass + " font-mono uppercase"}
+                        placeholder="e.g. RELIANCE"
+                        value={draft.ticker || ""}
+                        onChange={(e) => setDraft((cur) => ({ ...cur, ticker: e.target.value.toUpperCase() }))}
+                      />
+                    </FormField>
+
+                    <FormField label="Shares Owned" hint="Total number of shares you hold">
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={draft.shares ?? ""}
+                        onChange={(e) =>
+                          setDraft((cur) => ({ ...cur, shares: Number(e.target.value) || 0 }))
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Avg Purchase Price" hint="Your average cost per share">
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={draft.avgPrice ?? ""}
+                        onChange={(e) =>
+                          setDraft((cur) => ({ ...cur, avgPrice: Number(e.target.value) || 0 }))
+                        }
+                      />
+                    </FormField>
+
+                    {/* Computed value pill */}
+                    {stockComputedValue > 0 && (
+                      <div className="sm:col-span-2">
+                        <div
+                          className="flex items-center gap-2 rounded-xl px-4 py-2.5"
+                          style={{ backgroundColor: "rgba(38,113,244,0.06)", border: "1px solid rgba(38,113,244,0.15)" }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ color: "#2671f4" }}>
+                            <path d="M2 11L5 7.5L8 9.5L11 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          <span className="text-xs text-muted-foreground">Total position value:</span>
+                          <span className="font-numeric text-sm font-semibold" style={{ color: "#2671f4" }}>
+                            {formatCompact(stockComputedValue, currency)}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground/60">
+                            ({(draft.shares ?? 0).toLocaleString()} shares × {formatCompact(draft.avgPrice ?? 0, currency)})
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <FormField label="Broker / Institution">
+                      <input
+                        className={inputClass}
+                        placeholder="e.g. Zerodha, Angel One"
+                        value={draft.institution || ""}
+                        onChange={(e) =>
+                          setDraft((cur) => ({ ...cur, institution: e.target.value }))
+                        }
+                      />
+                    </FormField>
+                  </>
                 )}
 
-                {/* Contribution Frequency */}
-                <FormField label="Contribution Frequency">
-                  <div className="relative">
-                    <select
-                      className={selectClass}
-                      value={draft.contributionFrequency}
-                      onChange={(e) =>
-                        setDraft((cur) => ({
-                          ...cur,
-                          contributionFrequency: e.target.value as ContributionFrequency,
-                          contributionAmount: e.target.value === "one_time" ? 0 : cur.contributionAmount,
-                        }))
-                      }
-                    >
-                      {frequencies.map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                    <svg
-                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                      width="12" height="12" viewBox="0 0 12 12" fill="none"
-                    >
-                      <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </div>
-                </FormField>
-
-                {/* Contribution Amount */}
-                {draft.contributionFrequency !== "one_time" && (
-                  <FormField
-                    label="Contribution Amount"
-                    hint={
-                      isStockAddMode
-                        ? "Applied individually to each stock below"
-                        : frequencyHint(draft.contributionFrequency)
-                    }
-                  >
-                    <input
-                      className={inputClass}
-                      type="number"
-                      min={0}
-                      placeholder="0"
-                      value={draft.contributionAmount || ""}
-                      onChange={(e) =>
-                        setDraft((cur) => ({
-                          ...cur,
-                          contributionAmount: Number(e.target.value) || 0,
-                        }))
-                      }
-                    />
-                  </FormField>
-                )}
-
-                {/* Currently Invested — hidden in stock add mode (each entry has its own amount) */}
-                {!isStockAddMode && (
-                  <FormField label="Currently Invested" colSpan>
-                    <input
-                      className={inputClass}
-                      type="number"
-                      min={0}
-                      placeholder="0"
-                      value={draft.initialAmount || ""}
-                      onChange={(e) =>
-                        setDraft((cur) => ({
-                          ...cur,
-                          initialAmount: Number(e.target.value) || 0,
-                        }))
-                      }
-                    />
-                  </FormField>
-                )}
-
-                {/* ── Stock multi-entry builder ────────────────────── */}
+                {/* ══ STOCK MULTI-ADD BUILDER ══ */}
                 {isStockAddMode && (
                   <div className="sm:col-span-2">
                     <div className="mb-2.5 flex items-baseline gap-2">
@@ -802,24 +1091,26 @@ export default function InvestmentsPage() {
                     </div>
 
                     {/* Column headers */}
-                    <div className="mb-1.5 grid grid-cols-[1.5rem_1fr_8rem_2.25rem] gap-2 px-0.5">
+                    <div className="mb-1.5 grid grid-cols-[1.5rem_1fr_6rem_7rem_2.25rem] gap-2 px-0.5">
                       <span />
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                         Stock Name
                       </span>
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                        Invested
+                        Shares
+                      </span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                        Avg Price
                       </span>
                       <span />
                     </div>
 
-                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                    <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
                       {stockEntries.map((entry, idx) => (
                         <div
                           key={entry.id}
-                          className="grid grid-cols-[1.5rem_1fr_8rem_2.25rem] items-center gap-2"
+                          className="grid grid-cols-[1.5rem_1fr_6rem_7rem_2.25rem] items-center gap-2"
                         >
-                          {/* Row number */}
                           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
                             {idx + 1}
                           </span>
@@ -842,12 +1133,29 @@ export default function InvestmentsPage() {
                             type="number"
                             min={0}
                             placeholder="0"
-                            value={entry.amount || ""}
+                            value={entry.shares || ""}
                             onChange={(e) =>
                               setStockEntries((prev) =>
                                 prev.map((s) =>
                                   s.id === entry.id
-                                    ? { ...s, amount: Number(e.target.value) || 0 }
+                                    ? { ...s, shares: Number(e.target.value) || 0 }
+                                    : s
+                                )
+                              )
+                            }
+                          />
+
+                          <input
+                            className={inputClass}
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            value={entry.avgPrice || ""}
+                            onChange={(e) =>
+                              setStockEntries((prev) =>
+                                prev.map((s) =>
+                                  s.id === entry.id
+                                    ? { ...s, avgPrice: Number(e.target.value) || 0 }
                                     : s
                                 )
                               )
@@ -889,33 +1197,126 @@ export default function InvestmentsPage() {
                   </div>
                 )}
 
-                {/* Institution */}
-                <FormField label="Institution / Bank">
-                  <input
-                    className={inputClass}
-                    placeholder="e.g. Zerodha, HDFC AMC"
-                    value={draft.institution || ""}
-                    onChange={(e) =>
-                      setDraft((cur) => ({ ...cur, institution: e.target.value }))
-                    }
-                  />
-                </FormField>
+                {/* Institution — shown in stock add mode below the builder */}
+                {isStockAddMode && (
+                  <FormField label="Broker / Institution">
+                    <input
+                      className={inputClass}
+                      placeholder="e.g. Zerodha, Angel One"
+                      value={draft.institution || ""}
+                      onChange={(e) =>
+                        setDraft((cur) => ({ ...cur, institution: e.target.value }))
+                      }
+                    />
+                  </FormField>
+                )}
 
-                {/* Reference Link (renamed from Source URL) */}
-                <FormField label="Reference Link">
-                  <input
-                    className={inputClass}
-                    type="url"
-                    placeholder="https://groww.in/mutual-funds/hdfc-top-100-fund"
-                    value={draft.sourceUrl || ""}
-                    onChange={(e) =>
-                      setDraft((cur) => ({ ...cur, sourceUrl: e.target.value }))
-                    }
-                  />
-                </FormField>
+                {/* ══ STANDARD FORM (non-stock types) ══ */}
+                {!isStockAddMode && !isStockEditMode && (
+                  <>
+                    <FormField label="Name *">
+                      <input
+                        className={inputClass}
+                        placeholder="e.g. HDFC Top 100"
+                        value={draft.name}
+                        onChange={(e) =>
+                          setDraft((cur) => ({ ...cur, name: e.target.value }))
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Contribution Frequency">
+                      <div className="relative">
+                        <select
+                          className={selectClass}
+                          value={draft.contributionFrequency}
+                          onChange={(e) =>
+                            setDraft((cur) => ({
+                              ...cur,
+                              contributionFrequency: e.target.value as ContributionFrequency,
+                              contributionAmount: e.target.value === "one_time" ? 0 : cur.contributionAmount,
+                            }))
+                          }
+                        >
+                          {frequencies.map((item) => (
+                            <option key={item.value} value={item.value}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                        <svg
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                          width="12" height="12" viewBox="0 0 12 12" fill="none"
+                        >
+                          <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    </FormField>
+
+                    {draft.contributionFrequency !== "one_time" && (
+                      <FormField
+                        label="Contribution Amount"
+                        hint={frequencyHint(draft.contributionFrequency)}
+                      >
+                        <input
+                          className={inputClass}
+                          type="number"
+                          min={0}
+                          placeholder="0"
+                          value={draft.contributionAmount || ""}
+                          onChange={(e) =>
+                            setDraft((cur) => ({
+                              ...cur,
+                              contributionAmount: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </FormField>
+                    )}
+
+                    <FormField label="Currently Invested" colSpan>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={draft.initialAmount || ""}
+                        onChange={(e) =>
+                          setDraft((cur) => ({
+                            ...cur,
+                            initialAmount: Number(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Institution / Bank">
+                      <input
+                        className={inputClass}
+                        placeholder="e.g. Zerodha, HDFC AMC"
+                        value={draft.institution || ""}
+                        onChange={(e) =>
+                          setDraft((cur) => ({ ...cur, institution: e.target.value }))
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Reference Link">
+                      <input
+                        className={inputClass}
+                        type="url"
+                        placeholder="https://groww.in/mutual-funds/hdfc-top-100-fund"
+                        value={draft.sourceUrl || ""}
+                        onChange={(e) =>
+                          setDraft((cur) => ({ ...cur, sourceUrl: e.target.value }))
+                        }
+                      />
+                    </FormField>
+                  </>
+                )}
               </div>
 
-              {/* ── Session tray — investments added in this session ── */}
+              {/* ── Session tray ─────────────────────────────────── */}
               {sessionAdded.length > 0 && (
                 <div className="mt-5 rounded-xl border border-border bg-muted/50 p-4">
                   <div className="mb-2.5 flex items-center justify-between">
@@ -947,7 +1348,6 @@ export default function InvestmentsPage() {
 
             {/* Modal footer */}
             <div className="flex items-center justify-between border-t border-border px-6 py-4">
-              {/* Left: Done (when something added) or Cancel */}
               <button
                 type="button"
                 onClick={closeModal}
@@ -958,7 +1358,6 @@ export default function InvestmentsPage() {
                   : "Cancel"}
               </button>
 
-              {/* Right: Add / Save */}
               <button
                 type="button"
                 onClick={saveDraft}
