@@ -2,7 +2,6 @@ import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import { getServerEnv } from "../env";
 import type { InvestmentInput, InvestmentAssumption } from "../types";
-import { log } from "../logger";
 
 const assumptionSchema = z.object({
   expectedAnnualReturnPct: z.number(),
@@ -16,7 +15,7 @@ const assumptionSchema = z.object({
   historyAsOf: z.string().nullable().optional(),
   confidence: z.enum(["low", "medium", "high"]),
   rationale: z.string(),
-  sources: z.array(z.string()).default([])
+  sources: z.array(z.object({ title: z.string(), uri: z.string() })).default([])
 });
 
 function getClient() {
@@ -35,28 +34,6 @@ function sanitizeRate(value: number) {
   return Math.max(-80, Math.min(120, Number(value.toFixed(2))));
 }
 
-function normalizeUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    parsed.hash = "";
-    if (parsed.hostname.includes("vertexaisearch.cloud.google.com")) {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
-function sanitizeSources(sources: string[]) {
-  const normalized = sources
-    .map(normalizeUrl)
-    .filter((item): item is string => Boolean(item))
-    .filter((item) => !item.includes("grounding-api-redirect"));
-
-  const unique = Array.from(new Set(normalized));
-  return unique.slice(0, 5);
-}
 
 function average(numbers: number[]) {
   if (!numbers.length) {
@@ -80,7 +57,7 @@ CRITICAL INSTRUCTIONS:
 2. EXTRACT EXACT URLs: You must only return exact URLs directly copied from your search results. Do not guess, construct, format, or alter URLs in any way to make them "canonical". If you cannot find a valid source, return an empty array for sources.
 
 JSON Schema:
-{"expectedAnnualReturnPct":number,"conservativeAnnualReturnPct":number,"aggressiveAnnualReturnPct":number,"ytdReturnPct":number|null,"oneYearReturnPct":number|null,"threeYearCagrPct":number|null,"fiveYearCagrPct":number|null,"sinceInceptionCagrPct":number|null,"historyAsOf":string|null,"confidence":"low|medium|high","rationale":string,"sources":string[]}
+{"expectedAnnualReturnPct":number,"conservativeAnnualReturnPct":number,"aggressiveAnnualReturnPct":number,"ytdReturnPct":number|null,"oneYearReturnPct":number|null,"threeYearCagrPct":number|null,"fiveYearCagrPct":number|null,"sinceInceptionCagrPct":number|null,"historyAsOf":string|null,"confidence":"low|medium|high","rationale":string,"sources":[{title: string,uri:string}]}
 
 Input Data:
 Investment type: ${investment.type}
@@ -99,7 +76,7 @@ Guidelines:
 - Provide 3 direct source URLs exactly as found during your search.
 
 Example Output:
-{"expectedAnnualReturnPct":7.5,"conservativeAnnualReturnPct":5.0,"aggressiveAnnualReturnPct":9.5,"ytdReturnPct":4.2,"oneYearReturnPct":8.1,"threeYearCagrPct":6.8,"fiveYearCagrPct":7.2,"sinceInceptionCagrPct":8.0,"historyAsOf":"2026-02-21","confidence":"high","rationale":"Historical tech sector performance indicates strong growth, though recent volatility suggests a wider variance.","sources":["https://www.vanguard.com/actual-exact-link-found"]}`
+{"expectedAnnualReturnPct":7.5,"conservativeAnnualReturnPct":5.0,"aggressiveAnnualReturnPct":9.5,"ytdReturnPct":4.2,"oneYearReturnPct":8.1,"threeYearCagrPct":6.8,"fiveYearCagrPct":7.2,"sinceInceptionCagrPct":8.0,"historyAsOf":"2026-02-21","confidence":"high","rationale":"Historical tech sector performance indicates strong growth, though recent volatility suggests a wider variance.","sources":[{"title":"Vanguard Mutual Fund","uri":"https://www.vanguard.com/actual-exact-link-found"}]}`
 
   const response = await ai.models.generateContent({
     model,
@@ -108,6 +85,8 @@ Example Output:
       tools: [{ googleSearch: {} }]
     }
   });
+
+  console.log("Gemini raw response:", response.text);
 
   const raw = cleanJsonBlock(response.text || "{}");
 
@@ -142,11 +121,7 @@ Example Output:
       : sanitizeRate(expectedRaw * 0.55 + historyAnchor * 0.45);
 
   const sorted = [conservative, expected, aggressive].sort((a, b) => a - b);
-  const sources = sanitizeSources(
-    investment.sourceUrl
-      ? [investment.sourceUrl, ...(parsed.sources || [])]
-      : parsed.sources || []
-  );
+  const sources = (parsed.sources || []).slice(0, 5);
 
   return {
     investmentId: investment.id,

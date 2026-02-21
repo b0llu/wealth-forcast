@@ -52,7 +52,7 @@ export type InvestmentAssumption = {
   historyAsOf?: string | null;
   confidence: "low" | "medium" | "high";
   rationale: string;
-  sources: string[];
+  sources: { title: string; uri: string }[];
 };
 
 export type YearlyProjection = {

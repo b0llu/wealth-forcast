@@ -550,6 +550,24 @@ function ResearchCard({
         <p className="mb-3 text-xs leading-relaxed text-muted-foreground line-clamp-3">{assumption.rationale}</p>
       )}
 
+      {assumption.sources.length > 0 && (
+        <div className="border-t border-border pt-3">
+          <p className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">Sources</p>
+          <div className="grid gap-1.5">
+            {assumption.sources.map((src) => (
+              <a key={src.uri} href={src.uri} target="_blank" rel="noreferrer"
+                className="group flex items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-muted/40 px-2.5 py-1.5 transition-colors hover:border-[#2671f4]/30 hover:bg-muted">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 text-muted-foreground group-hover:text-[#2671f4]">
+                  <path d="M4 2H2a1 1 0 00-1 1v5a1 1 0 001 1h5a1 1 0 001-1V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                  <path d="M6 1h3v3M9 1L5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+                <span className="truncate text-[11px] text-muted-foreground group-hover:text-foreground min-w-0">{src.title}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       {assumption.historyAsOf && (
         <p className="mt-2 text-[10px] text-muted-foreground/60">Data as of {assumption.historyAsOf}</p>
       )}
