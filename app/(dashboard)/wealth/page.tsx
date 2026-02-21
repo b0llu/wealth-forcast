@@ -452,126 +452,131 @@ function MilestoneCards({ projections, currency, years }: { projections: YearlyP
   );
 }
 
-/* ─── Confidence badge ───────────────────────────────────────── */
+/* ─── Research signal row ────────────────────────────────────── */
 
-function ConfidenceBadge({ level }: { level: "low" | "medium" | "high" }) {
-  const cfg = {
-    high:   { label: "High",   color: "#22c55e", width: "100%" },
-    medium: { label: "Medium", color: "#ffae04", width: "60%"  },
-    low:    { label: "Low",    color: "#ef4444", width: "28%"  },
-  }[level];
-  return (
-    <div className="flex items-center gap-2">
-      <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-        style={{ backgroundColor: `${cfg.color}18`, color: cfg.color }}>{cfg.label}</span>
-      <div className="h-1 w-16 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full" style={{ width: cfg.width, backgroundColor: cfg.color }} />
-      </div>
-    </div>
-  );
-}
+function ResearchRow({ assumption, name }: { assumption: InvestmentAssumption; name: string }) {
+  const [open, setOpen] = useState(false);
 
-/* ─── Return bar ─────────────────────────────────────────────── */
-
-function ReturnBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  const width = Math.max(4, (Math.abs(value) / Math.max(max, 1)) * 100);
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-24 shrink-0 text-[10px] text-muted-foreground">{label}</span>
-      <div className="relative h-4 flex-1 overflow-hidden rounded bg-muted">
-        <div className="absolute left-0 top-0 h-full rounded transition-all duration-700"
-          style={{ width: `${width}%`, backgroundColor: color, opacity: 0.7 }} />
-        <span className="absolute inset-0 flex items-center pl-2 text-[10px] font-semibold" style={{ color }}>
-          {value > 0 ? "+" : ""}{value}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Research signal card ───────────────────────────────────── */
-
-
-function ResearchCard({
-  assumption,
-  investmentName,
-}: {
-  assumption: InvestmentAssumption;
-  investmentName: string;
-}) {
-  const maxReturn = Math.max(
-    assumption.aggressiveAnnualReturnPct,
-    assumption.expectedAnnualReturnPct,
-    Math.abs(assumption.conservativeAnnualReturnPct)
-  );
+  const accentColor =
+    assumption.confidence === "high"   ? "#22c55e" :
+    assumption.confidence === "medium" ? "#ffae04" : "#ef4444";
 
   const historicals = [
-    { label: "YTD",         value: assumption.ytdReturnPct },
-    { label: "1 Year",      value: assumption.oneYearReturnPct },
-    { label: "3Y CAGR",     value: assumption.threeYearCagrPct },
-    { label: "5Y CAGR",     value: assumption.fiveYearCagrPct },
-    { label: "Since Start", value: assumption.sinceInceptionCagrPct },
-  ].filter((h) => h.value !== null && h.value !== undefined) as { label: string; value: number }[];
+    { label: "YTD",   value: assumption.ytdReturnPct },
+    { label: "1Y",    value: assumption.oneYearReturnPct },
+    { label: "3Y",    value: assumption.threeYearCagrPct },
+    { label: "5Y",    value: assumption.fiveYearCagrPct },
+    { label: "Incep", value: assumption.sinceInceptionCagrPct },
+  ].filter((h): h is { label: string; value: number } => h.value != null);
+
+  const hasDetails = historicals.length > 0 || !!assumption.rationale || assumption.sources.length > 0;
 
   return (
-    <article className="animate-fade-in-up rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:border-border/60 hover:shadow-lg">
-      <div className="mb-4 flex items-start justify-between gap-2">
-        <h5 className="text-sm font-semibold leading-snug text-card-foreground">{investmentName}</h5>
-        <ConfidenceBadge level={assumption.confidence} />
-      </div>
+    <div>
+      {/* ── Main row ── */}
+      <button
+        type="button"
+        onClick={() => hasDetails && setOpen((v) => !v)}
+        className={["w-full flex items-center gap-4 px-5 py-4 text-left transition-colors",
+          hasDetails ? "cursor-pointer hover:bg-muted/20" : "cursor-default"].join(" ")}
+      >
+        {/* Confidence accent stripe */}
+        <div className="shrink-0 w-0.5 h-10 rounded-full transition-opacity duration-200"
+          style={{ backgroundColor: accentColor, opacity: open ? 1 : 0.3 }} />
 
-      {historicals.length > 0 && (
-        <div className="mb-4">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Historical Returns</p>
-          <div className="grid grid-cols-3 gap-1.5">
-            {historicals.slice(0, 5).map((h) => (
-              <div key={h.label} className="rounded-lg bg-muted px-2 py-1.5 text-center">
-                <p className="text-[9px] text-muted-foreground">{h.label}</p>
-                <p className="font-numeric text-xs font-semibold"
-                  style={{ color: h.value > 0 ? "#22c55e" : h.value < 0 ? "#ef4444" : "#888" }}>
-                  {h.value > 0 ? "+" : ""}{h.value}%
-                </p>
+        {/* Name */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{name}</p>
+          {assumption.historyAsOf && (
+            <p className="text-[10px] text-muted-foreground/40 mt-0.5">data as of {assumption.historyAsOf}</p>
+          )}
+        </div>
+
+        {/* Returns — always visible, the whole point */}
+        <div className="flex items-center gap-5 shrink-0">
+          <div className="text-right">
+            <p className="font-numeric text-sm font-semibold text-[#525252]">
+              {assumption.conservativeAnnualReturnPct >= 0 ? "+" : ""}{assumption.conservativeAnnualReturnPct}%
+            </p>
+            <p className="text-[9px] uppercase tracking-widest text-muted-foreground/35 mt-0.5">Low</p>
+          </div>
+          <div className="text-center min-w-[72px]">
+            <p className="font-numeric text-2xl font-bold text-[#2671f4] leading-none">
+              {assumption.expectedAnnualReturnPct >= 0 ? "+" : ""}{assumption.expectedAnnualReturnPct}%
+            </p>
+            <p className="text-[9px] uppercase tracking-widest text-muted-foreground/40 mt-1">Expected</p>
+          </div>
+          <div className="text-left">
+            <p className="font-numeric text-sm font-semibold text-[#ffae04]">
+              {assumption.aggressiveAnnualReturnPct >= 0 ? "+" : ""}{assumption.aggressiveAnnualReturnPct}%
+            </p>
+            <p className="text-[9px] uppercase tracking-widest text-muted-foreground/35 mt-0.5">High</p>
+          </div>
+        </div>
+
+        {/* Confidence badge + chevron */}
+        <div className="flex items-center gap-2 shrink-0 pl-2">
+          <span className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+            style={{ color: accentColor, backgroundColor: `${accentColor}12` }}>
+            {assumption.confidence}
+          </span>
+          {hasDetails && (
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+              className={`text-muted-foreground/30 transition-transform duration-200 ${open ? "rotate-180" : ""}`}>
+              <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </div>
+      </button>
+
+      {/* ── Expanded panel ── */}
+      {open && hasDetails && (
+        <div className="animate-fade-in-up border-t border-border/40 bg-muted/10 px-5 py-4 pl-10 space-y-4">
+
+          {historicals.length > 0 && (
+            <div>
+              <p className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50">Historical Performance</p>
+              <div className="flex flex-wrap gap-1.5">
+                {historicals.map((h) => (
+                  <div key={h.label} className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
+                    <span className="text-[9px] text-muted-foreground/60">{h.label}</span>
+                    <span className="font-numeric text-xs font-semibold"
+                      style={{ color: h.value > 0 ? "#22c55e" : "#ef4444" }}>
+                      {h.value > 0 ? "+" : ""}{h.value}%
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {assumption.rationale && (
+            <div>
+              <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50">AI Analysis</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{assumption.rationale}</p>
+            </div>
+          )}
+
+          {assumption.sources.length > 0 && (
+            <div>
+              <p className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50">Research Sources</p>
+              <div className="grid gap-1.5">
+                {assumption.sources.map((src) => (
+                  <a key={src.uri} href={src.uri} target="_blank" rel="noreferrer"
+                    className="group flex items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-muted/40 px-2.5 py-1.5 transition-colors hover:border-[#2671f4]/30 hover:bg-muted">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 text-muted-foreground/50 group-hover:text-[#2671f4] transition-colors">
+                      <path d="M4 2H2a1 1 0 00-1 1v5a1 1 0 001 1h5a1 1 0 001-1V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                      <path d="M6 1h3v3M9 1L5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                    </svg>
+                    <span className="truncate min-w-0 text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">{src.title}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
-
-      <div className="mb-4">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Projected Annual Return</p>
-        <div className="grid gap-2">
-          <ReturnBar label="Conservative" value={assumption.conservativeAnnualReturnPct} max={maxReturn} color="#747474" />
-          <ReturnBar label="Expected"     value={assumption.expectedAnnualReturnPct}     max={maxReturn} color="#2671f4" />
-          <ReturnBar label="Aggressive"   value={assumption.aggressiveAnnualReturnPct}   max={maxReturn} color="#ffae04" />
-        </div>
-      </div>
-
-      {assumption.rationale && (
-        <p className="mb-3 text-xs leading-relaxed text-muted-foreground line-clamp-3">{assumption.rationale}</p>
-      )}
-
-      {assumption.sources.length > 0 && (
-        <div className="border-t border-border pt-3">
-          <p className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">Sources</p>
-          <div className="grid gap-1.5">
-            {assumption.sources.map((src) => (
-              <a key={src.uri} href={src.uri} target="_blank" rel="noreferrer"
-                className="group flex items-center gap-1.5 overflow-hidden rounded-lg border border-border/50 bg-muted/40 px-2.5 py-1.5 transition-colors hover:border-[#2671f4]/30 hover:bg-muted">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 text-muted-foreground group-hover:text-[#2671f4]">
-                  <path d="M4 2H2a1 1 0 00-1 1v5a1 1 0 001 1h5a1 1 0 001-1V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                  <path d="M6 1h3v3M9 1L5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                </svg>
-                <span className="truncate text-[11px] text-muted-foreground group-hover:text-foreground min-w-0">{src.title}</span>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {assumption.historyAsOf && (
-        <p className="mt-2 text-[10px] text-muted-foreground/60">Data as of {assumption.historyAsOf}</p>
-      )}
-    </article>
+    </div>
   );
 }
 
@@ -873,19 +878,16 @@ export default function WealthPage() {
         <section className="animate-fade-in-up">
           <div className="mb-4">
             <h3 className="font-semibold text-foreground">AI Research Signals</h3>
-            <p className="text-xs text-muted-foreground">Return assumptions from live market data · sources labelled by origin</p>
+            <p className="text-xs text-muted-foreground">Return assumptions from live market data · click a row for historical detail</p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {forecast.assumptions.map((assumption) => {
-              const investment = investments.find((i) => i.id === assumption.investmentId);
-              return (
-                <ResearchCard
-                  key={assumption.investmentId}
-                  assumption={assumption}
-                  investmentName={investment?.name || assumption.investmentId}
-                />
-              );
-            })}
+          <div className="overflow-hidden rounded-2xl border border-border bg-card divide-y divide-border/60">
+            {forecast.assumptions.map((a) => (
+              <ResearchRow
+                key={a.investmentId}
+                assumption={a}
+                name={investments.find((i) => i.id === a.investmentId)?.name ?? a.investmentId}
+              />
+            ))}
           </div>
         </section>
       )}

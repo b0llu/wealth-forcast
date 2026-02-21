@@ -71,7 +71,7 @@ Guidelines:
 - If Source URL is provided, prioritize it for data extraction. If not, independently search authoritative financial sources.
 - Conservative <= Expected <= Aggressive.
 - Return percentages must be annual nominal rates.
-- For stocks and mutual funds, attempt to find YTD, 1Y, 3Y CAGR, 5Y CAGR, and since-inception CAGR. Use null if data is unavailable.
+- You MUST search for and populate historical return fields: ytdReturnPct, oneYearReturnPct, threeYearCagrPct, fiveYearCagrPct, sinceInceptionCagrPct. Only use null as a last resort if the data genuinely does not exist anywhere online after searching multiple sources.
 - Keep rationale under 220 characters.
 - Provide 3 direct source URLs exactly as found during your search.
 

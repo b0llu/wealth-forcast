@@ -613,7 +613,6 @@ export default function InvestmentsPage() {
 
                 <FormField
                   label="Source URL (optional)"
-                  hint="Gemini will use this page to research return assumptions"
                   colSpan
                 >
                   <input
