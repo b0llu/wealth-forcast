@@ -105,8 +105,12 @@ function PortfolioChart({
 
   function onMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     if (!svgRef.current || !projections.length) return;
-    const rect  = svgRef.current.getBoundingClientRect();
-    const relX  = Math.max(0, Math.min(CW, ((e.clientX - rect.left) / rect.width) * W - PL));
+    const pt  = svgRef.current.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const ctm = svgRef.current.getScreenCTM();
+    if (!ctm) return;
+    const svgPt = pt.matrixTransform(ctm.inverse());
+    const relX  = Math.max(0, Math.min(CW, svgPt.x - PL));
     const index = Math.round((relX / CW) * (projections.length - 1));
     const data  = projections[index];
     if (data) setTooltip({ svgX: getX(index), index, data, invested: investedAmounts[index] ?? 0 });
@@ -117,10 +121,10 @@ function PortfolioChart({
   const tipFlip = tipLeft > 62;
 
   return (
-    <div className="relative" style={{ height: 380 }}>
+    <div className="relative" style={{ height: 380 }} onMouseLeave={() => setTooltip(null)}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" height="380"
         className="block overflow-visible" style={{ cursor: "crosshair" }}
-        onMouseMove={onMouseMove} onMouseLeave={() => setTooltip(null)}>
+        onMouseMove={onMouseMove}>
         <defs>
           <clipPath id="wf-clip"><rect x={PL} y={PT - 10} width={CW} height={CH + 20} /></clipPath>
         </defs>
@@ -173,14 +177,14 @@ function PortfolioChart({
       </svg>
 
       {tooltip && (
-        <div className="pointer-events-none absolute top-3 z-10 min-w-[180px] rounded-xl border border-border bg-popover/95 p-3 shadow-2xl backdrop-blur-sm"
+        <div className="absolute top-3 z-10 min-w-[180px] rounded-xl border border-border bg-popover/95 p-3 shadow-2xl backdrop-blur-sm"
           style={{
             left:      tipFlip ? undefined : `${tipLeft}%`,
             right:     tipFlip ? `${100 - tipLeft}%` : undefined,
             transform: tipFlip ? "translateX(0)" : "translateX(8px)",
           }}>
           <p className="font-numeric mb-2.5 text-xs font-semibold text-muted-foreground">Year {tooltip.data.year}</p>
-          <div className="grid gap-1.5">
+          <div className="grid gap-1.5 max-h-52 overflow-y-auto">
             {([
               { label: "Aggressive",   val: tooltip.data.aggressiveValue,   color: "#ffae04" },
               { label: "Expected",     val: tooltip.data.expectedValue,     color: "#2671f4" },
@@ -213,14 +217,22 @@ interface BreakdownTooltip {
   yearData: { name: string; value: number; color: string }[];
 }
 
-function BreakdownChart({ projections, currency }: { projections: InvestmentProjection[]; currency: string }) {
+function BreakdownChart({ projections, currency, scenario }: { projections: InvestmentProjection[]; currency: string; scenario: ScenarioMode }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<BreakdownTooltip | null>(null);
 
+  useEffect(() => { setTooltip(null); }, [scenario]);
+
+  const pick = useCallback((y: { conservativeValue: number; expectedValue: number; aggressiveValue: number }) =>
+    scenario === "conservative" ? y.conservativeValue
+    : scenario === "aggressive" ? y.aggressiveValue
+    : y.expectedValue,
+  [scenario]);
+
   const years = projections[0]?.yearly.length ?? 0;
   const maxVal = useMemo(
-    () => Math.max(...projections.flatMap((p) => p.yearly.map((y) => y.expectedValue))) * 1.1,
-    [projections]
+    () => Math.max(...projections.flatMap((p) => p.yearly.map((y) => pick(y)))) * 1.1,
+    [projections, pick]
   );
   const getX = useCallback((i: number) => PL + (i / Math.max(years - 1, 1)) * CW, [years]);
   const getY = useCallback((v: number) => PT + CH - (v / maxVal) * CH, [maxVal]);
@@ -229,10 +241,10 @@ function BreakdownChart({ projections, currency }: { projections: InvestmentProj
     projections.map((inv, idx) => ({
       name:  inv.investmentName,
       color: BREAKDOWN_COLORS[idx % BREAKDOWN_COLORS.length],
-      path:  makeSmoothPath(inv.yearly.map((y, i) => ({ x: getX(i), y: getY(y.expectedValue) }))),
-      pts:   inv.yearly.map((y, i) => ({ x: getX(i), y: getY(y.expectedValue), val: y.expectedValue })),
+      path:  makeSmoothPath(inv.yearly.map((y, i) => ({ x: getX(i), y: getY(pick(y)) }))),
+      pts:   inv.yearly.map((y, i) => ({ x: getX(i), y: getY(pick(y)), val: pick(y) })),
     })),
-    [projections, getX, getY]
+    [projections, getX, getY, pick]
   );
 
   const yTicks  = useMemo(() => Array.from({ length: 6 }, (_, i) => (maxVal / 5) * i), [maxVal]);
@@ -241,27 +253,31 @@ function BreakdownChart({ projections, currency }: { projections: InvestmentProj
 
   function onMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     if (!svgRef.current || !years) return;
-    const rect  = svgRef.current.getBoundingClientRect();
-    const relX  = Math.max(0, Math.min(CW, ((e.clientX - rect.left) / rect.width) * W - PL));
+    const pt  = svgRef.current.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const ctm = svgRef.current.getScreenCTM();
+    if (!ctm) return;
+    const svgPt = pt.matrixTransform(ctm.inverse());
+    const relX  = Math.max(0, Math.min(CW, svgPt.x - PL));
     const index = Math.round((relX / CW) * (years - 1));
-    setTooltip({
-      svgX: getX(index), index, year: index + 1,
-      yearData: projections.map((inv, idx) => ({
+    const yearData = projections
+      .map((inv, idx) => ({
         name:  inv.investmentName,
-        value: inv.yearly[index]?.expectedValue ?? 0,
+        value: pick(inv.yearly[index] ?? { conservativeValue: 0, expectedValue: 0, aggressiveValue: 0 }),
         color: BREAKDOWN_COLORS[idx % BREAKDOWN_COLORS.length],
-      })),
-    });
+      }))
+      .sort((a, b) => b.value - a.value);
+    setTooltip({ svgX: getX(index), index, year: index + 1, yearData });
   }
 
   const tipLeft = tooltip ? (tooltip.svgX / W) * 100 : 0;
   const tipFlip = tipLeft > 55;
 
   return (
-    <div className="relative" style={{ height: 380 }}>
+    <div className="relative" style={{ height: 380 }} onMouseLeave={() => setTooltip(null)}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" height="380"
         className="block overflow-visible" style={{ cursor: "crosshair" }}
-        onMouseMove={onMouseMove} onMouseLeave={() => setTooltip(null)}>
+        onMouseMove={onMouseMove}>
         <clipPath id="wf-clip2"><rect x={PL} y={PT - 10} width={CW} height={CH + 20} /></clipPath>
 
         {yTicks.map((t, i) => (
@@ -280,7 +296,7 @@ function BreakdownChart({ projections, currency }: { projections: InvestmentProj
               fill="#666" fontFamily="JetBrains Mono, monospace">{year}</text>
           ))}
 
-        <g clipPath="url(#wf-clip2)">
+        <g key={scenario} clipPath="url(#wf-clip2)">
           {lines.map(({ path, color, name }, li) => (
             <path key={name} d={path} fill="none" stroke={color} strokeWidth="2"
               strokeLinecap="round" pathLength="1" strokeDasharray="1" strokeDashoffset="1"
@@ -301,14 +317,14 @@ function BreakdownChart({ projections, currency }: { projections: InvestmentProj
       </svg>
 
       {tooltip && (
-        <div className="pointer-events-none absolute top-3 z-10 min-w-[192px] rounded-xl border border-border bg-popover/95 p-3 shadow-2xl backdrop-blur-sm"
+        <div className="absolute top-3 z-10 min-w-[192px] rounded-xl border border-border bg-popover/95 p-3 shadow-2xl backdrop-blur-sm"
           style={{
             left:      tipFlip ? undefined : `${tipLeft}%`,
             right:     tipFlip ? `${100 - tipLeft}%` : undefined,
             transform: tipFlip ? "translateX(0)" : "translateX(8px)",
           }}>
           <p className="font-numeric mb-2.5 text-xs font-semibold text-muted-foreground">Year {tooltip.year}</p>
-          <div className="grid gap-1.5">
+          <div className="grid gap-1.5 max-h-52 overflow-y-auto">
             {tooltip.yearData.map(({ name, value, color }) => (
               <div key={name} className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
@@ -329,7 +345,8 @@ function BreakdownChart({ projections, currency }: { projections: InvestmentProj
 
 /* ─── Chart mode toggle ──────────────────────────────────────── */
 
-type ChartMode = "portfolio" | "breakdown" | InvestmentType;
+type ChartMode    = "portfolio" | "breakdown" | InvestmentType;
+type ScenarioMode = "conservative" | "expected" | "aggressive";
 
 type TabItem = { value: ChartMode; label: string };
 
@@ -661,6 +678,7 @@ export default function WealthPage() {
   } = usePlannerStore();
 
   const [chartMode,    setChartMode]    = useState<ChartMode>("portfolio");
+  const [scenarioMode, setScenarioMode] = useState<ScenarioMode>("expected");
   const [showCalcInfo, setShowCalcInfo] = useState(false);
 
   const investmentCount = useMemo(
@@ -812,7 +830,7 @@ export default function WealthPage() {
       {!isGenerating && forecast && hasNonZero && (
         <section className="animate-fade-in-up rounded-2xl border border-border bg-card shadow-sm">
 
-          {/* ── Stable header: title left, tabs right ─────────── */}
+          {/* ── Stable header: title left, controls right ─────── */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
             <div>
               <h3 className="font-semibold text-card-foreground">
@@ -825,10 +843,29 @@ export default function WealthPage() {
               <p className="text-xs text-muted-foreground">
                 {chartMode === "portfolio"
                   ? "Combined projection · conservative / expected / aggressive"
-                  : "Expected growth per investment · hover to inspect"}
+                  : "Hover to inspect · individual investment values"}
               </p>
             </div>
-            <ChartTabs mode={chartMode} onChange={setChartMode} tabs={chartTabs} />
+            <div className="flex items-center gap-2">
+              {chartMode !== "portfolio" && (
+                <div className="relative">
+                  <select
+                    value={scenarioMode}
+                    onChange={(e) => setScenarioMode(e.target.value as ScenarioMode)}
+                    className="appearance-none rounded-lg border border-border bg-background py-1.5 pl-3 pr-7 text-xs font-medium text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-ring/30"
+                  >
+                    <option value="conservative">Conservative</option>
+                    <option value="expected">Expected</option>
+                    <option value="aggressive">Aggressive</option>
+                  </select>
+                  <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M2 3.5L5 6.5l3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              )}
+              <ChartTabs mode={chartMode} onChange={setChartMode} tabs={chartTabs} />
+            </div>
           </div>
 
           {/* ── Chart ─────────────────────────────────────────── */}
@@ -840,7 +877,7 @@ export default function WealthPage() {
                 investedAmounts={investedAmounts}
               />
             ) : (
-              <BreakdownChart projections={activeProjections} currency={forecast.currency} />
+              <BreakdownChart projections={activeProjections} currency={forecast.currency} scenario={scenarioMode} />
             )}
           </div>
 

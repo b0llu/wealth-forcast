@@ -12,16 +12,18 @@ export async function saveForecastRun(
   output: ForecastResponse
 ) {
   const db     = getFirebaseAdminDb();
-  const docRef = db.collection(FORECAST_COLLECTION).doc();
+  // Use uid as the document ID so each user always has exactly one forecast document.
+  // Subsequent runs overwrite the same document (set without merge = full replace).
+  const docRef = db.collection(FORECAST_COLLECTION).doc(uid);
 
   await docRef.set({
     uid,
     input,
     output,
-    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
-  return docRef.id;
+  return docRef.id; // returns uid — stable reference to the single forecast doc
 }
 
 /** Cache the latest forecast directly on the portfolio document so it survives page refresh. */
@@ -75,7 +77,6 @@ export async function savePortfolio(uid: string, portfolio: Pick<PortfolioData, 
         years:       portfolio.years,
         investments: portfolio.investments,
         updatedAt:   FieldValue.serverTimestamp(),
-        createdAt:   FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
