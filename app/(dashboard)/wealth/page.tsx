@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useRef, useCallback } from "react";
+import { useMemo, useState, useRef, useCallback, useEffect } from "react";
 import { usePlannerStore } from "../../../components/planner-store";
-import type { YearlyProjection, InvestmentProjection, InvestmentAssumption } from "../../../lib/types";
+import type { YearlyProjection, InvestmentProjection, InvestmentAssumption, InvestmentType } from "../../../lib/types";
 
 /* ─── Formatting ─────────────────────────────────────────────── */
 
@@ -33,15 +33,6 @@ function formatAxisValue(value: number, currency: string): string {
   return `${value.toFixed(0)}`;
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("en-US", {
-      month: "short", day: "numeric", year: "numeric",
-      hour: "numeric", minute: "2-digit",
-    });
-  } catch { return iso; }
-}
-
 /* ─── Chart constants ────────────────────────────────────────── */
 
 const W = 900, H = 380, PL = 64, PR = 24, PT = 24, PB = 48;
@@ -62,10 +53,6 @@ function makeSmoothPath(pts: { x: number; y: number }[]): string {
     d += ` C ${cpx1},${p.y.toFixed(2)} ${cpx2},${c.y.toFixed(2)} ${c.x.toFixed(2)},${c.y.toFixed(2)}`;
   }
   return d;
-}
-
-function makeAreaPath(line: string, x0: number, x1: number, yBottom: number): string {
-  return line ? `${line} L ${x1.toFixed(2)},${yBottom.toFixed(2)} L ${x0.toFixed(2)},${yBottom.toFixed(2)} Z` : "";
 }
 
 /* ─── Portfolio chart ────────────────────────────────────────── */
@@ -104,7 +91,7 @@ function PortfolioChart({
     invPts:  investedAmounts.map((v, i) => ({ x: getX(i), y: getY(v) })),
   }), [projections, investedAmounts, getX, getY]);
 
-  const bottomY = PT + CH, x0 = getX(0), x1 = getX(projections.length - 1);
+  const bottomY = PT + CH;
   const aggrLine = makeSmoothPath(aggrPts);
   const expLine  = makeSmoothPath(expPts);
   const consLine = makeSmoothPath(consPts);
@@ -135,18 +122,6 @@ function PortfolioChart({
         className="block overflow-visible" style={{ cursor: "crosshair" }}
         onMouseMove={onMouseMove} onMouseLeave={() => setTooltip(null)}>
         <defs>
-          <linearGradient id="wf-ga" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ffae04" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#ffae04" stopOpacity="0.01" />
-          </linearGradient>
-          <linearGradient id="wf-ge" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2671f4" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#2671f4" stopOpacity="0.01" />
-          </linearGradient>
-          <linearGradient id="wf-gc" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#747474" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="#747474" stopOpacity="0.01" />
-          </linearGradient>
           <clipPath id="wf-clip"><rect x={PL} y={PT - 10} width={CW} height={CH + 20} /></clipPath>
         </defs>
 
@@ -166,11 +141,6 @@ function PortfolioChart({
           <text key={p.year} x={getX(i)} y={H - 10} textAnchor="middle" fontSize="11"
             fill="#666" fontFamily="JetBrains Mono, monospace">{p.year}</text>
         ))}
-
-        {/* Area fills */}
-        <path d={makeAreaPath(aggrLine, x0, x1, bottomY)} fill="url(#wf-ga)" />
-        <path d={makeAreaPath(expLine,  x0, x1, bottomY)} fill="url(#wf-ge)" />
-        <path d={makeAreaPath(consLine, x0, x1, bottomY)} fill="url(#wf-gc)" />
 
         <g clipPath="url(#wf-clip)">
           {/* Invested amount — dashed white reference line */}
@@ -359,16 +329,28 @@ function BreakdownChart({ projections, currency }: { projections: InvestmentProj
 
 /* ─── Chart mode toggle ──────────────────────────────────────── */
 
-type ChartMode = "portfolio" | "breakdown";
+type ChartMode = "portfolio" | "breakdown" | InvestmentType;
 
-function ChartToggle({ mode, onChange }: { mode: ChartMode; onChange: (m: ChartMode) => void }) {
+type TabItem = { value: ChartMode; label: string };
+
+const TYPE_LABELS: Record<InvestmentType, string> = {
+  mutual_fund:   "Mutual Funds",
+  stock:         "Stocks",
+  ppf:           "PPF",
+  nps:           "NPS",
+  fixed_deposit: "Fixed Deposits",
+  crypto:        "Crypto",
+  other:         "Other",
+};
+
+function ChartTabs({ mode, onChange, tabs }: { mode: ChartMode; onChange: (m: ChartMode) => void; tabs: TabItem[] }) {
   return (
-    <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs">
-      {(["portfolio", "breakdown"] as ChartMode[]).map((m) => (
-        <button key={m} type="button" onClick={() => onChange(m)}
+    <div className="flex flex-wrap gap-0.5 rounded-lg border border-border bg-background p-0.5 text-xs">
+      {tabs.map(({ value, label }) => (
+        <button key={value} type="button" onClick={() => onChange(value)}
           className={["rounded-md px-3 py-1.5 font-medium transition-all",
-            mode === m ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"].join(" ")}>
-          {m === "portfolio" ? "Portfolio" : "By Investment"}
+            mode === value ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"].join(" ")}>
+          {label}
         </button>
       ))}
     </div>
@@ -457,10 +439,6 @@ function MilestoneCards({ projections, currency, years }: { projections: YearlyP
 function ResearchRow({ assumption, name }: { assumption: InvestmentAssumption; name: string }) {
   const [open, setOpen] = useState(false);
 
-  const accentColor =
-    assumption.confidence === "high"   ? "#22c55e" :
-    assumption.confidence === "medium" ? "#ffae04" : "#ef4444";
-
   const historicals = [
     { label: "YTD",   value: assumption.ytdReturnPct },
     { label: "1Y",    value: assumption.oneYearReturnPct },
@@ -480,9 +458,9 @@ function ResearchRow({ assumption, name }: { assumption: InvestmentAssumption; n
         className={["w-full flex items-center gap-4 px-5 py-4 text-left transition-colors",
           hasDetails ? "cursor-pointer hover:bg-muted/20" : "cursor-default"].join(" ")}
       >
-        {/* Confidence accent stripe */}
-        <div className="shrink-0 w-0.5 h-10 rounded-full transition-opacity duration-200"
-          style={{ backgroundColor: accentColor, opacity: open ? 1 : 0.3 }} />
+        {/* Expand indicator stripe */}
+        <div className="shrink-0 w-0.5 h-10 rounded-full bg-border transition-opacity duration-200"
+          style={{ opacity: open ? 1 : 0.3 }} />
 
         {/* Name */}
         <div className="flex-1 min-w-0">
@@ -514,19 +492,15 @@ function ResearchRow({ assumption, name }: { assumption: InvestmentAssumption; n
           </div>
         </div>
 
-        {/* Confidence badge + chevron */}
-        <div className="flex items-center gap-2 shrink-0 pl-2">
-          <span className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider"
-            style={{ color: accentColor, backgroundColor: `${accentColor}12` }}>
-            {assumption.confidence}
-          </span>
-          {hasDetails && (
+        {/* Chevron */}
+        {hasDetails && (
+          <div className="shrink-0 pl-2">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
               className={`text-muted-foreground/30 transition-transform duration-200 ${open ? "rotate-180" : ""}`}>
               <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-          )}
-        </div>
+          </div>
+        )}
       </button>
 
       {/* ── Expanded panel ── */}
@@ -681,10 +655,9 @@ function GenerateButton({ isGenerating, disabled, onClick }: { isGenerating: boo
 
 export default function WealthPage() {
   const {
-    forecast, runId, currency, years, investments,
+    forecast, currency, years, investments,
     generateForecast, isGenerating, isLoadingPortfolio,
-    error, totalCurrentInvestment, totalYearlyContribution,
-    forecastGeneratedAt,
+    error, totalCurrentInvestment, totalYearlyContribution
   } = usePlannerStore();
 
   const [chartMode,    setChartMode]    = useState<ChartMode>("portfolio");
@@ -715,6 +688,38 @@ export default function WealthPage() {
     }, 0);
     return forecast.totalProjection.map((row) => totalStarting + yearlyContrib * row.year);
   }, [forecast, investments]);
+
+  // Which investment types are present in the current forecast (only show type tabs when 2+ types)
+  const typeBreakdownTabs = useMemo((): InvestmentType[] => {
+    if (!forecast) return [];
+    const typesPresent = new Set<InvestmentType>();
+    forecast.projections.forEach((proj) => {
+      const inv = investments.find((i) => i.id === proj.investmentId);
+      if (inv) typesPresent.add(inv.type);
+    });
+    return typesPresent.size >= 2 ? Array.from(typesPresent) : [];
+  }, [forecast, investments]);
+
+  const chartTabs = useMemo((): TabItem[] => [
+    { value: "portfolio",  label: "Portfolio"       },
+    { value: "breakdown",  label: "By Investment"   },
+    ...typeBreakdownTabs.map((t) => ({ value: t as ChartMode, label: TYPE_LABELS[t] })),
+  ], [typeBreakdownTabs]);
+
+  // Reset to portfolio if current mode is no longer available (e.g. after re-generating)
+  useEffect(() => {
+    const valid = new Set<ChartMode>(chartTabs.map((t) => t.value));
+    if (!valid.has(chartMode)) setChartMode("portfolio");
+  }, [chartTabs, chartMode]);
+
+  // Projections filtered to the active type-specific tab
+  const activeProjections = useMemo(() => {
+    if (!forecast) return [];
+    if (chartMode === "portfolio" || chartMode === "breakdown") return forecast.projections;
+    return forecast.projections.filter(
+      (proj) => investments.find((inv) => inv.id === proj.investmentId)?.type === chartMode
+    );
+  }, [forecast, investments, chartMode]);
 
   return (
     <div className="mx-auto grid max-w-5xl gap-6">
@@ -807,11 +812,15 @@ export default function WealthPage() {
       {!isGenerating && forecast && hasNonZero && (
         <section className="animate-fade-in-up rounded-2xl border border-border bg-card shadow-sm">
 
-          {/* ── Stable header: title left, toggle right — no legend here ── */}
+          {/* ── Stable header: title left, tabs right ─────────── */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
             <div>
               <h3 className="font-semibold text-card-foreground">
-                {chartMode === "portfolio" ? "Portfolio Growth" : "Investment Breakdown"}
+                {chartMode === "portfolio"
+                  ? "Portfolio Growth"
+                  : chartMode === "breakdown"
+                  ? "Investment Breakdown"
+                  : `${TYPE_LABELS[chartMode as InvestmentType]} Breakdown`}
               </h3>
               <p className="text-xs text-muted-foreground">
                 {chartMode === "portfolio"
@@ -819,8 +828,7 @@ export default function WealthPage() {
                   : "Expected growth per investment · hover to inspect"}
               </p>
             </div>
-            {/* Toggle — always the same width, no layout shift */}
-            <ChartToggle mode={chartMode} onChange={setChartMode} />
+            <ChartTabs mode={chartMode} onChange={setChartMode} tabs={chartTabs} />
           </div>
 
           {/* ── Chart ─────────────────────────────────────────── */}
@@ -832,7 +840,7 @@ export default function WealthPage() {
                 investedAmounts={investedAmounts}
               />
             ) : (
-              <BreakdownChart projections={forecast.projections} currency={forecast.currency} />
+              <BreakdownChart projections={activeProjections} currency={forecast.currency} />
             )}
           </div>
 
@@ -840,17 +848,7 @@ export default function WealthPage() {
           <div className="border-t border-border px-6 py-3">
             {chartMode === "portfolio"
               ? <PortfolioLegend />
-              : <BreakdownLegend projections={forecast.projections} />}
-          </div>
-
-          {/* ── Metadata ──────────────────────────────────────── */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-6 py-3">
-            {forecastGeneratedAt && (
-              <p className="text-[10px] text-muted-foreground/60">Generated {formatDate(forecastGeneratedAt)}</p>
-            )}
-            {runId && (
-              <p className="font-mono text-[10px] text-muted-foreground/40">{runId}</p>
-            )}
+              : <BreakdownLegend projections={activeProjections} />}
           </div>
         </section>
       )}

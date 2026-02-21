@@ -50,7 +50,6 @@ export type InvestmentAssumption = {
   fiveYearCagrPct?: number | null;
   sinceInceptionCagrPct?: number | null;
   historyAsOf?: string | null;
-  confidence: "low" | "medium" | "high";
   rationale: string;
   sources: { title: string; uri: string }[];
 };
