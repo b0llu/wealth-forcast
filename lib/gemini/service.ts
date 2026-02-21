@@ -72,27 +72,34 @@ export async function fetchAssumptionsWithSearch(
 ): Promise<InvestmentAssumption> {
   const { ai, model } = getClient();
 
-  const prompt = [
-    "You are a financial research assistant.",
-    "Use web search to estimate forward-looking annualized return assumptions from historical trend context.",
-    "Respond ONLY with minified JSON and no markdown.",
-    "JSON schema:",
-    '{"expectedAnnualReturnPct":number,"conservativeAnnualReturnPct":number,"aggressiveAnnualReturnPct":number,"ytdReturnPct":number|null,"oneYearReturnPct":number|null,"threeYearCagrPct":number|null,"fiveYearCagrPct":number|null,"sinceInceptionCagrPct":number|null,"historyAsOf":string|null,"confidence":"low|medium|high","rationale":string,"sources":string[]}',
-    `Investment type: ${investment.type}`,
-    `Investment name: ${investment.name}`,
-    `Currency: ${currency}`,
-    `Ticker: ${investment.ticker || "n/a"}`,
-    `Institution: ${investment.institution || "n/a"}`,
-    `Source URL: ${investment.sourceUrl || "n/a"}`,
-    "Guidelines:",
-    "0) If Source URL is provided, prioritize that URL for data extraction and cite it first when valid.",
-    "0.1) If Source URL is not provided, independently search the web and pick the most authoritative sources available.",
-    "1) Conservative <= Expected <= Aggressive.",
-    "2) Return percentages should be annual nominal rates.",
-    "3) For stocks and mutual funds, try to include YTD, 1Y, 3Y CAGR, 5Y CAGR and since inception CAGR.",
-    "4) Keep rationale under 220 characters.",
-    "5) Provide 2-5 direct canonical source URLs and avoid redirect/tracking URLs."
-  ].join("\n");
+  const prompt = `You are a financial research assistant.
+Your task is to use web search to estimate forward-looking annualized return assumptions based on historical trends.
+
+CRITICAL INSTRUCTIONS:
+1. Output STRICTLY as minified JSON. No markdown formatting, no code blocks, no preamble, and no conversational text.
+2. EXTRACT EXACT URLs: You must only return exact URLs directly copied from your search results. Do not guess, construct, format, or alter URLs in any way to make them "canonical". If you cannot find a valid source, return an empty array for sources.
+
+JSON Schema:
+{"expectedAnnualReturnPct":number,"conservativeAnnualReturnPct":number,"aggressiveAnnualReturnPct":number,"ytdReturnPct":number|null,"oneYearReturnPct":number|null,"threeYearCagrPct":number|null,"fiveYearCagrPct":number|null,"sinceInceptionCagrPct":number|null,"historyAsOf":string|null,"confidence":"low|medium|high","rationale":string,"sources":string[]}
+
+Input Data:
+Investment type: ${investment.type}
+Investment name: ${investment.name}
+Currency: ${currency}
+Ticker: ${investment.ticker || "n/a"}
+Institution: ${investment.institution || "n/a"}
+Source URL: ${investment.sourceUrl || "n/a"}
+
+Guidelines:
+- If Source URL is provided, prioritize it for data extraction. If not, independently search authoritative financial sources.
+- Conservative <= Expected <= Aggressive.
+- Return percentages must be annual nominal rates.
+- For stocks and mutual funds, attempt to find YTD, 1Y, 3Y CAGR, 5Y CAGR, and since-inception CAGR. Use null if data is unavailable.
+- Keep rationale under 220 characters.
+- Provide 3 direct source URLs exactly as found during your search.
+
+Example Output:
+{"expectedAnnualReturnPct":7.5,"conservativeAnnualReturnPct":5.0,"aggressiveAnnualReturnPct":9.5,"ytdReturnPct":4.2,"oneYearReturnPct":8.1,"threeYearCagrPct":6.8,"fiveYearCagrPct":7.2,"sinceInceptionCagrPct":8.0,"historyAsOf":"2026-02-21","confidence":"high","rationale":"Historical tech sector performance indicates strong growth, though recent volatility suggests a wider variance.","sources":["https://www.vanguard.com/actual-exact-link-found"]}`
 
   log("info", "gemini.assumption.request", {
     investmentId: investment.id,

@@ -258,7 +258,7 @@ function InvestmentCard({
         {/* Stats row */}
         <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
           <div className="rounded-lg bg-muted px-2.5 py-2">
-            <p className="text-[10px] text-muted-foreground">Starting</p>
+            <p className="text-[10px] text-muted-foreground">Currently Invested</p>
             <p className="font-numeric mt-0.5 font-semibold text-foreground">
               {formatCompact(investment.initialAmount, currency)}
             </p>
@@ -531,6 +531,8 @@ export default function InvestmentsPage() {
                         setDraft((cur) => ({
                           ...cur,
                           contributionFrequency: e.target.value as ContributionFrequency,
+                          // clear contribution amount when switching to one-time
+                          contributionAmount: e.target.value === "one_time" ? 0 : cur.contributionAmount,
                         }))
                       }
                     >
@@ -549,26 +551,29 @@ export default function InvestmentsPage() {
                   </div>
                 </FormField>
 
-                <FormField
-                  label="Contribution Amount"
-                  hint={frequencyHint(draft.contributionFrequency)}
-                >
-                  <input
-                    className={inputClass}
-                    type="number"
-                    min={0}
-                    placeholder="0"
-                    value={draft.contributionAmount || ""}
-                    onChange={(e) =>
-                      setDraft((cur) => ({
-                        ...cur,
-                        contributionAmount: Number(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </FormField>
+                {/* Contribution Amount — hidden for one-time investments */}
+                {draft.contributionFrequency !== "one_time" && (
+                  <FormField
+                    label="Contribution Amount"
+                    hint={frequencyHint(draft.contributionFrequency)}
+                  >
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min={0}
+                      placeholder="0"
+                      value={draft.contributionAmount || ""}
+                      onChange={(e) =>
+                        setDraft((cur) => ({
+                          ...cur,
+                          contributionAmount: Number(e.target.value) || 0,
+                        }))
+                      }
+                    />
+                  </FormField>
+                )}
 
-                <FormField label="Starting Invested Amount" colSpan>
+                <FormField label="Currently Invested" colSpan>
                   <input
                     className={inputClass}
                     type="number"

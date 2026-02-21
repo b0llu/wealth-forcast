@@ -25,6 +25,29 @@ export async function saveForecastRun(
   return docRef.id;
 }
 
+/** Cache the latest forecast directly on the portfolio document so it survives page refresh. */
+export async function updatePortfolioForecast(
+  uid: string,
+  runId: string,
+  forecast: ForecastResponse
+) {
+  const db = getFirebaseAdminDb();
+  await db
+    .collection(PORTFOLIO_COLLECTION)
+    .doc(uid)
+    .set(
+      {
+        lastForecastRunId: runId,
+        lastForecast:      forecast,
+        lastForecastAt:    forecast.generatedAt,
+        updatedAt:         FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+  log("debug", "firebase.portfolio.forecast_cached", { uid, runId });
+}
+
 export async function getPortfolio(uid: string): Promise<PortfolioData | null> {
   const db   = getFirebaseAdminDb();
   const snap = await db.collection(PORTFOLIO_COLLECTION).doc(uid).get();
@@ -34,22 +57,28 @@ export async function getPortfolio(uid: string): Promise<PortfolioData | null> {
   if (!data) return null;
 
   return {
-    currency:    (data.currency    as string)                           || "INR",
-    years:       (data.years       as number)                           || 15,
-    investments: (data.investments as PortfolioData["investments"]) || [],
+    currency:         (data.currency    as string)                           || "INR",
+    years:            (data.years       as number)                           || 15,
+    investments:      (data.investments as PortfolioData["investments"]) || [],
+    lastForecast:     (data.lastForecast    as ForecastResponse | null)  ?? null,
+    lastForecastRunId:(data.lastForecastRunId as string | null)           ?? null,
+    lastForecastAt:   (data.lastForecastAt   as string | null)            ?? null,
   };
 }
 
-export async function savePortfolio(uid: string, portfolio: PortfolioData) {
+/** Saves only currency/years/investments — intentionally does not overwrite forecast fields. */
+export async function savePortfolio(uid: string, portfolio: Pick<PortfolioData, "currency" | "years" | "investments">) {
   const db = getFirebaseAdminDb();
   await db
     .collection(PORTFOLIO_COLLECTION)
     .doc(uid)
     .set(
       {
-        ...portfolio,
-        updatedAt: FieldValue.serverTimestamp(),
-        createdAt: FieldValue.serverTimestamp(),
+        currency:    portfolio.currency,
+        years:       portfolio.years,
+        investments: portfolio.investments,
+        updatedAt:   FieldValue.serverTimestamp(),
+        createdAt:   FieldValue.serverTimestamp(),
       },
       { merge: true }
     );

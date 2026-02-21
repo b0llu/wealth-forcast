@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { fetchAssumptionsWithSearch } from "../../../lib/gemini/service";
 import { buildForecast } from "../../../lib/forecast/calculator";
-import { saveForecastRun } from "../../../lib/firebase/repository";
+import { saveForecastRun, updatePortfolioForecast } from "../../../lib/firebase/repository";
 import { verifyIdToken } from "../../../lib/firebase/admin";
 import type { ForecastRequest } from "../../../lib/types";
 import { log, safeErrorMessage } from "../../../lib/logger";
@@ -65,6 +65,9 @@ export async function POST(request: NextRequest) {
 
     const runId = await saveForecastRun(uid, parsed, forecast);
     log("info", "forecast.saved", { runId, uid });
+
+    // Cache the result on the portfolio so it survives page refresh
+    await updatePortfolioForecast(uid, runId, forecast);
 
     return NextResponse.json({ runId, forecast }, { status: 200 });
   } catch (error) {

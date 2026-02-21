@@ -183,7 +183,7 @@ function UserPanel() {
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { investments, totalCurrentInvestment, totalYearlyContribution, currency, years } =
+  const { investments, totalCurrentInvestment, totalYearlyContribution, currency } =
     usePlannerStore();
 
   return (
@@ -254,16 +254,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             />
           </div>
 
-          {/* Forecast horizon + user */}
+          {/* User panel */}
           <div className="mt-auto pt-6">
-            <div className="animate-fade-in delay-400 rounded-lg border border-sidebar-border bg-sidebar-accent/20 px-3 py-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Forecast horizon
-              </p>
-              <p className="font-numeric mt-1 text-sm font-semibold text-sidebar-foreground">
-                {years} <span className="text-xs font-normal text-muted-foreground">years</span>
-              </p>
-            </div>
             <UserPanel />
           </div>
         </aside>

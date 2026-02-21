@@ -32,6 +32,11 @@ export type PortfolioData = {
   currency: string;
   years: number;
   investments: InvestmentInput[];
+  /** Cached result of the most recent forecast run */
+  lastForecast?:      ForecastResponse | null;
+  lastForecastRunId?: string | null;
+  /** ISO-8601 timestamp of when the forecast was generated */
+  lastForecastAt?:    string | null;
 };
 
 export type InvestmentAssumption = {
