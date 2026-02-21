@@ -33,7 +33,6 @@ export async function GET(request: NextRequest) {
     const uid  = await verifyIdToken(request.headers.get("Authorization"));
     const data = (await getPortfolio(uid)) ?? defaultPortfolio();
 
-    log("info", "portfolio.loaded", { uid });
     return NextResponse.json({ data }, { status: 200 });
   } catch (error) {
     const msg = safeErrorMessage(error);
@@ -49,7 +48,6 @@ export async function PUT(request: NextRequest) {
     const payload = portfolioSchema.parse(await request.json());
 
     await savePortfolio(uid, payload);
-    log("info", "portfolio.saved", { uid });
 
     return NextResponse.json({ data: payload }, { status: 200 });
   } catch (error) {

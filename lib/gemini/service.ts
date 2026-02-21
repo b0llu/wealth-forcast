@@ -101,13 +101,6 @@ Guidelines:
 Example Output:
 {"expectedAnnualReturnPct":7.5,"conservativeAnnualReturnPct":5.0,"aggressiveAnnualReturnPct":9.5,"ytdReturnPct":4.2,"oneYearReturnPct":8.1,"threeYearCagrPct":6.8,"fiveYearCagrPct":7.2,"sinceInceptionCagrPct":8.0,"historyAsOf":"2026-02-21","confidence":"high","rationale":"Historical tech sector performance indicates strong growth, though recent volatility suggests a wider variance.","sources":["https://www.vanguard.com/actual-exact-link-found"]}`
 
-  log("info", "gemini.assumption.request", {
-    investmentId: investment.id,
-    type: investment.type,
-    hasSourceUrl: Boolean(investment.sourceUrl),
-    ticker: investment.ticker || null
-  });
-
   const response = await ai.models.generateContent({
     model,
     contents: prompt,
@@ -117,10 +110,6 @@ Example Output:
   });
 
   const raw = cleanJsonBlock(response.text || "{}");
-  log("debug", "gemini.assumption.raw_response", {
-    investmentId: investment.id,
-    raw: raw.slice(0, 900)
-  });
 
   let parsed: z.infer<typeof assumptionSchema>;
   try {
@@ -158,15 +147,6 @@ Example Output:
       ? [investment.sourceUrl, ...(parsed.sources || [])]
       : parsed.sources || []
   );
-
-  log("info", "gemini.assumption.parsed", {
-    investmentId: investment.id,
-    conservative: sorted[0],
-    expected: sorted[1],
-    aggressive: sorted[2],
-    historyAnchor,
-    sourceCount: sources.length
-  });
 
   return {
     investmentId: investment.id,

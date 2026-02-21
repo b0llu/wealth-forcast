@@ -491,21 +491,6 @@ function ReturnBar({ label, value, max, color }: { label: string; value: number;
 
 /* ─── Research signal card ───────────────────────────────────── */
 
-function SourceLink({ url }: { url: string }) {
-  let label = url;
-  try { label = new URL(url).hostname.replace("www.", ""); } catch { label = url.slice(0, 40); }
-
-  return (
-    <a href={url} target="_blank" rel="noreferrer"
-      className="group flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 px-2.5 py-1.5 transition-colors hover:border-[#2671f4]/30 hover:bg-muted">
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 text-muted-foreground group-hover:text-[#2671f4]">
-        <path d="M4 2H2a1 1 0 00-1 1v5a1 1 0 001 1h5a1 1 0 001-1V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        <path d="M6 1h3v3M9 1L5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      </svg>
-      <span className="truncate text-[11px] text-muted-foreground group-hover:text-foreground">{label}</span>
-    </a>
-  );
-}
 
 function ResearchCard({
   assumption,
@@ -563,21 +548,6 @@ function ResearchCard({
 
       {assumption.rationale && (
         <p className="mb-3 text-xs leading-relaxed text-muted-foreground line-clamp-3">{assumption.rationale}</p>
-      )}
-
-      {/* All sources — user's link is labelled "Your link", AI-found labelled "AI found" */}
-      {assumption.sources.length > 0 && (
-        <div className="border-t border-border pt-3">
-          <p className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">Sources</p>
-          <div className="grid gap-1.5">
-            {assumption.sources.map((src) => (
-              <SourceLink
-                key={src}
-                url={src}
-              />
-            ))}
-          </div>
-        </div>
       )}
 
       {assumption.historyAsOf && (

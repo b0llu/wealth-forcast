@@ -21,7 +21,6 @@ export async function saveForecastRun(
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  log("info", "firebase.forecast.saved", { runId: docRef.id, investments: input.investments.length });
   return docRef.id;
 }
 
@@ -44,8 +43,6 @@ export async function updatePortfolioForecast(
       },
       { merge: true }
     );
-
-  log("debug", "firebase.portfolio.forecast_cached", { uid, runId });
 }
 
 export async function getPortfolio(uid: string): Promise<PortfolioData | null> {
@@ -82,6 +79,4 @@ export async function savePortfolio(uid: string, portfolio: Pick<PortfolioData, 
       },
       { merge: true }
     );
-
-  log("debug", "firebase.portfolio.saved", { uid, investments: portfolio.investments.length });
 }

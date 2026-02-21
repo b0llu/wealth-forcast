@@ -42,29 +42,13 @@ export async function POST(request: NextRequest) {
       throw new Error("At least one investment must include a non-zero amount.");
     }
 
-    log("info", "forecast.request.received", {
-      uid,
-      years:       parsed.years,
-      currency:    parsed.currency,
-      investments: parsed.investments.map((inv) => ({
-        id: inv.id, type: inv.type, name: inv.name,
-        hasSourceUrl: Boolean(inv.sourceUrl), ticker: inv.ticker || null,
-      })),
-    });
-
     const assumptions = await Promise.all(
       parsed.investments.map((inv) => fetchAssumptionsWithSearch(inv, parsed.currency))
     );
-    log("info", "forecast.assumptions.ready", { count: assumptions.length });
 
     const forecast = buildForecast(parsed, assumptions);
-    log("info", "forecast.calculation.ready", {
-      years:         forecast.totalProjection.length,
-      finalExpected: forecast.totalProjection.at(-1)?.expectedValue ?? null,
-    });
 
     const runId = await saveForecastRun(uid, parsed, forecast);
-    log("info", "forecast.saved", { runId, uid });
 
     // Cache the result on the portfolio so it survives page refresh
     await updatePortfolioForecast(uid, runId, forecast);
