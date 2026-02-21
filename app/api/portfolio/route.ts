@@ -16,6 +16,8 @@ const investmentSchema = z.object({
   institution:           z.string().optional(),
   ticker:                z.string().optional(),
   notes:                 z.string().optional(),
+  shares:                z.number().min(0).optional(),
+  avgPrice:              z.number().min(0).optional(),
 });
 
 const portfolioSchema = z.object({
