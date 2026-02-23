@@ -42,18 +42,6 @@ function normalizePortfolio(data?: Partial<PortfolioData>): PortfolioData {
   };
 }
 
-/** Returns true if lastForecastAt was before today (needs auto-refresh). */
-function needsAutoRegen(lastForecastAt: string | null | undefined): boolean {
-  if (!lastForecastAt) return false;
-  const last    = new Date(lastForecastAt);
-  const today   = new Date();
-  return (
-    last.getFullYear() !== today.getFullYear() ||
-    last.getMonth()    !== today.getMonth()    ||
-    last.getDate()     !== today.getDate()
-  );
-}
-
 export function PlannerProvider({ children }: { children: ReactNode }) {
   const { user, getIdToken } = useAuth();
 
@@ -66,12 +54,9 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [isGenerating,       setIsGenerating]  = useState(false);
   const [isLoadingPortfolio, setIsLoading]     = useState(false);
   const [error,              setError]         = useState<string | null>(null);
-  const [pendingAutoRegen,   setPendingAutoRegen] = useState(false);
 
   const hasLoadedRef     = useRef(false);
   const saveTimeoutRef   = useRef<NodeJS.Timeout | null>(null);
-  // Always up-to-date reference to generateForecast so the auto-regen effect can call it
-  const generateRef      = useRef<() => Promise<void>>(null!);
 
   /* ── Load / reset portfolio when user changes ────────────────── */
   useEffect(() => {
@@ -115,10 +100,6 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           setForecastAt(raw.lastForecastAt ?? null);
         }
 
-        // Schedule auto-regen if last run was before today
-        if (needsAutoRegen(raw.lastForecastAt) && normalized.investments.length > 0) {
-          setPendingAutoRegen(true);
-        }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load portfolio");
       } finally {
@@ -130,14 +111,6 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     loadPortfolio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
-
-  /* ── Auto-regen: fires once the portfolio has fully loaded ───── */
-  useEffect(() => {
-    if (pendingAutoRegen && !isLoadingPortfolio && investments.length > 0) {
-      setPendingAutoRegen(false);
-      generateRef.current?.();
-    }
-  }, [pendingAutoRegen, isLoadingPortfolio, investments]);
 
   /* ── Auto-save (debounced 350 ms) ────────────────────────────── */
   useEffect(() => {
@@ -231,9 +204,6 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       setIsGenerating(false);
     }
   };
-
-  // Keep the ref current so the auto-regen effect always calls the latest version
-  generateRef.current = generateForecast;
 
   /* ── Context value ───────────────────────────────────────────── */
   const value: PlannerState = {
